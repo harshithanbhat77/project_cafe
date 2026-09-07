@@ -1,0 +1,13 @@
+from alembic import op
+import sqlalchemy as sa
+revision='0001';down_revision=None
+def upgrade():
+    role=sa.String(20);status=sa.String(20)
+    op.create_table('users',sa.Column('id',sa.Integer,primary_key=True),sa.Column('name',sa.String(120),nullable=False),sa.Column('email',sa.String(255),unique=True,nullable=False),sa.Column('password_hash',sa.String(255),nullable=False),sa.Column('role',role,nullable=False),sa.Column('active',sa.Boolean,nullable=False),sa.Column('created_at',sa.DateTime(timezone=True)),sa.Column('updated_at',sa.DateTime(timezone=True)))
+    op.create_table('cafe_tables',sa.Column('id',sa.Integer,primary_key=True),sa.Column('name',sa.String(80),nullable=False),sa.Column('qr_token',sa.String(96),unique=True,nullable=False),sa.Column('active',sa.Boolean,nullable=False),sa.Column('created_at',sa.DateTime(timezone=True)),sa.Column('updated_at',sa.DateTime(timezone=True)))
+    op.create_table('categories',sa.Column('id',sa.Integer,primary_key=True),sa.Column('name',sa.String(80),unique=True,nullable=False),sa.Column('description',sa.Text),sa.Column('active',sa.Boolean,nullable=False))
+    op.create_table('menu_items',sa.Column('id',sa.Integer,primary_key=True),sa.Column('category_id',sa.Integer,sa.ForeignKey('categories.id'),nullable=False),sa.Column('name',sa.String(120),nullable=False),sa.Column('description',sa.Text),sa.Column('price',sa.Numeric(10,2),nullable=False),sa.Column('image_url',sa.String(500)),sa.Column('available',sa.Boolean,nullable=False),sa.Column('active',sa.Boolean,nullable=False))
+    op.create_table('orders',sa.Column('id',sa.Integer,primary_key=True),sa.Column('reference',sa.String(20),unique=True,nullable=False),sa.Column('table_id',sa.Integer,sa.ForeignKey('cafe_tables.id'),nullable=False),sa.Column('status',status,nullable=False),sa.Column('subtotal',sa.Numeric(10,2),nullable=False),sa.Column('total',sa.Numeric(10,2),nullable=False),sa.Column('idempotency_key',sa.String(120),unique=True,nullable=False),sa.Column('created_at',sa.DateTime(timezone=True)),sa.Column('updated_at',sa.DateTime(timezone=True)))
+    op.create_table('order_items',sa.Column('id',sa.Integer,primary_key=True),sa.Column('order_id',sa.Integer,sa.ForeignKey('orders.id',ondelete='CASCADE'),nullable=False),sa.Column('menu_item_id',sa.Integer,sa.ForeignKey('menu_items.id'),nullable=False),sa.Column('item_name_snapshot',sa.String(120),nullable=False),sa.Column('unit_price_snapshot',sa.Numeric(10,2),nullable=False),sa.Column('quantity',sa.Integer,nullable=False),sa.Column('line_total',sa.Numeric(10,2),nullable=False))
+def downgrade():
+    for n in ('order_items','orders','menu_items','categories','cafe_tables','users'):op.drop_table(n)
