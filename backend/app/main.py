@@ -1,11 +1,14 @@
 import logging
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from .config import settings
+from .db import get_db
 from .limits import limiter
 from .routers import admin, public
 
@@ -41,7 +44,9 @@ async def security_headers(request, call_next):
 
 
 @app.get("/health")
-def health():
+def health(db: Session = Depends(get_db)):
+    """For uptime checks: fails if the database is unreachable."""
+    db.execute(text("SELECT 1"))
     return {"status": "ok"}
 
 

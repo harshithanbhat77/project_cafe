@@ -1,0 +1,26 @@
+# Production reverse proxy. Caddy gets and renews the HTTPS certificate for $DOMAIN automatically.
+# The browser only ever talks to this one domain: /api goes to FastAPI, everything else to Next.js.
+# Caddy overwrites any X-Forwarded-For header sent by the client, so the API's rate limits see the real IP.
+
+{$DOMAIN} {
+	encode gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle /health {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

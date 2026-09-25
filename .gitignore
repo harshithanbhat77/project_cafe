@@ -227,3 +227,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Database dumps from scripts/backup.sh
+backups/
