@@ -21,6 +21,7 @@ OWNER_ONLY_ENDPOINTS = [
     ("get", "/api/admin/users"),
     ("post", "/api/admin/users"),
     ("patch", "/api/admin/users/1"),
+    ("get", "/api/admin/summary"),
 ]
 
 

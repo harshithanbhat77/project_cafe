@@ -125,7 +125,11 @@ class Order(Base):
     status: Mapped[OrderStatus] = mapped_column(
         Enum(OrderStatus, native_enum=False, length=20), default=OrderStatus.PLACED, index=True
     )
+    notes: Mapped[str | None] = mapped_column(Text)  # e.g. "no onions", from the guest
+    # The bill is stored, not recalculated, so changing the rates later doesn't alter past orders.
     subtotal: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    service_charge: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    tax: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     total: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     idempotency_key: Mapped[str] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)

@@ -21,7 +21,9 @@ from ..models import (
     OrderStatus,
     with_order_details,
 )
+from ..pricing import make_bill
 from ..schemas import (
+    Charges,
     CustomerSessionIn,
     CustomerSessionOut,
     OrderIn,
@@ -53,7 +55,12 @@ def get_menu(table_token: str, db: Session = Depends(get_db)):
             public_categories.append(
                 PublicCategory(id=category.id, name=category.name, description=category.description, items=items)
             )
-    return PublicMenu(table=PublicTable(name=table.name), categories=public_categories)
+    charges = Charges(
+        service_charge_percent=settings.service_charge_percent,
+        tax_percent=settings.tax_percent,
+        tax_label=settings.tax_label,
+    )
+    return PublicMenu(table=PublicTable(name=table.name), categories=public_categories, charges=charges)
 
 
 @router.post("/session", response_model=CustomerSessionOut)
@@ -116,7 +123,7 @@ def place_order(
     ).all()
     by_id = {item.id: item for item in menu_items}
 
-    total = Decimal("0")
+    subtotal = Decimal("0")
     lines = []
     for line in data.items:
         item = by_id.get(line.item_id)
@@ -126,7 +133,7 @@ def place_order(
             raise HTTPException(409, f"{item.name} is sold out")
         # Prices always come from the database, never from the request.
         line_total = item.price * line.quantity
-        total += line_total
+        subtotal += line_total
         lines.append(
             OrderItem(
                 menu_item_id=item.id,
@@ -137,14 +144,18 @@ def place_order(
             )
         )
 
+    bill = make_bill(subtotal)
     order = Order(
         table_id=session.table_id,
         customer_session_id=session.id,
         customer_name=session.customer_name,
         customer_phone=session.customer_phone,
         status=OrderStatus.PLACED,
-        subtotal=total,
-        total=total,
+        notes=data.notes,
+        subtotal=bill.subtotal,
+        service_charge=bill.service_charge,
+        tax=bill.tax,
+        total=bill.total,
         idempotency_key=data.idempotency_key,
         items=lines,
     )

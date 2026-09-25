@@ -5,7 +5,7 @@ public API by accident (e.g. customer phone numbers are only in AdminOrderOut).
 """
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, ClassVar
 
@@ -129,6 +129,14 @@ class OrderLineIn(BaseModel):
 class OrderIn(BaseModel):
     items: list[OrderLineIn] = Field(min_length=1, max_length=50)
     idempotency_key: str = Field(min_length=8, max_length=120)
+    notes: str | None = Field(default=None, max_length=300)
+
+    @field_validator("notes")
+    @classmethod
+    def blank_notes_are_none(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        return value.strip()
 
 
 class PublicTable(BaseModel):
@@ -151,9 +159,18 @@ class PublicCategory(BaseModel):
     items: list[PublicMenuItem]
 
 
+class Charges(BaseModel):
+    """Rates added to the bill, so the cart can show an estimate. The server's bill is final."""
+
+    service_charge_percent: Money
+    tax_percent: Money
+    tax_label: str
+
+
 class PublicMenu(BaseModel):
     table: PublicTable
     categories: list[PublicCategory]
+    charges: Charges
 
 
 class CustomerSessionOut(BaseModel):
@@ -176,7 +193,10 @@ class OrderOut(BaseModel):
     reference: str
     table_name: str
     status: OrderStatus
+    notes: str | None
     subtotal: Money
+    service_charge: Money
+    tax: Money
     total: Money
     created_at: datetime
     items: list[OrderLineOut]
@@ -207,7 +227,10 @@ def _order_fields(order: Order) -> dict:
         "reference": order.reference,
         "table_name": order.table.name,
         "status": order.status,
+        "notes": order.notes,
         "subtotal": order.subtotal,
+        "service_charge": order.service_charge,
+        "tax": order.tax,
         "total": order.total,
         "created_at": order.created_at,
         "items": [
@@ -227,6 +250,19 @@ def _order_fields(order: Order) -> dict:
 
 class StatusIn(BaseModel):
     status: OrderStatus
+
+
+class TopItem(BaseModel):
+    name: str
+    quantity: int
+
+
+class SummaryOut(BaseModel):
+    day: date
+    orders: int  # not counting cancelled ones
+    cancelled: int
+    revenue: Money  # total of non-cancelled orders, including service charge and tax
+    top_items: list[TopItem]
 
 
 # ---------- Admin: categories ----------

@@ -109,9 +109,11 @@ def start_session(client: TestClient, table: CafeTable, name="Aanya", phone="+91
     return r.json()["session_token"]
 
 
-def place_order(client: TestClient, table: CafeTable, session_token: str, items: list[dict], key="key-00000001"):
+def place_order(
+    client: TestClient, table: CafeTable, session_token: str, items: list[dict], key="key-00000001", notes=None
+):
     return client.post(
         f"/api/public/tables/{table.qr_token}/orders",
-        json={"items": items, "idempotency_key": key},
+        json={"items": items, "idempotency_key": key, "notes": notes},
         headers={"X-Session-Token": session_token},
     )

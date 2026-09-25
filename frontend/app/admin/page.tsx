@@ -10,6 +10,7 @@ type Order = {
   total: number
   customer_name: string
   customer_phone: string
+  notes: string | null
   items: { name: string; quantity: number }[]
 }
 
@@ -174,6 +175,7 @@ export default function Admin() {
                 <div className="muted">
                   {o.customer_name} · {o.customer_phone}
                 </div>
+                {o.notes && <div className="muted">Note: {o.notes}</div>}
                 {o.items.map((i) => (
                   <div key={i.name}>
                     {i.name} × {i.quantity}
