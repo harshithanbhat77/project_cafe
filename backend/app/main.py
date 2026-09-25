@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .db import get_db
 from .limits import limiter
-from .routers import admin, public
+from .routers import admin_auth, admin_menu, admin_orders, admin_tables, admin_users, public
 
 logging.basicConfig(level=logging.INFO)
 
@@ -51,5 +51,8 @@ def health(db: Session = Depends(get_db)):
 
 
 app.include_router(public.router)
-app.include_router(admin.auth_router)
-app.include_router(admin.router)
+app.include_router(admin_auth.router)
+app.include_router(admin_orders.router)
+app.include_router(admin_menu.router)
+app.include_router(admin_tables.router)
+app.include_router(admin_users.router)

@@ -37,7 +37,7 @@ def authenticate(db: Session, email: str, password: str) -> User | None:
     return user
 
 
-# ---------- Admin ----------
+# ---------- Staff and owner logins ----------
 
 
 def make_admin_token(user: User) -> str:
@@ -53,12 +53,13 @@ def make_admin_token(user: User) -> str:
 _bearer = HTTPBearer(auto_error=False)
 
 
-def current_admin(
+def current_user(
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),
 ) -> User:
-    """Require a valid admin token. The user is re-loaded on every request, so
-    deactivating an admin locks them out immediately."""
+    """Require a valid staff or owner token. The user (and their role) is re-loaded from
+    the database on every request, so deactivating someone locks them out immediately
+    and a role change applies straight away."""
     not_authenticated = HTTPException(401, "Authentication required", headers={"WWW-Authenticate": "Bearer"})
     if creds is None:
         raise not_authenticated
@@ -72,9 +73,19 @@ def current_admin(
         user = db.get(User, int(claims["sub"]))
     except (jwt.PyJWTError, ValueError):
         raise not_authenticated
-    if user is None or not user.active or user.role != Role.ADMIN:
+    if user is None or not user.active:
         raise not_authenticated
     return user
+
+
+def require_owner(user: User = Depends(current_user)) -> User:
+    if user.role != Role.OWNER:
+        raise HTTPException(403, "Only the owner can do this")
+    return user
+
+
+# Add to a route as `dependencies=OWNER_ONLY` to restrict it to the owner.
+OWNER_ONLY = [Depends(require_owner)]
 
 
 # ---------- Guests ----------

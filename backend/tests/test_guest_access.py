@@ -65,17 +65,17 @@ def test_expired_session_is_rejected(client, db, tables, menu):
     assert place_order(client, tables["t1"], token, [{"item_id": menu["toast"].id, "quantity": 1}]).status_code == 401
 
 
-def test_cleared_table_ends_sessions(client, tables, menu, admin_headers):
+def test_cleared_table_ends_sessions(client, tables, menu, owner_headers):
     token = start_session(client, tables["t1"])
-    r = client.post(f"/api/admin/tables/{tables['t1'].id}/clear", headers=admin_headers)
+    r = client.post(f"/api/admin/tables/{tables['t1'].id}/clear", headers=owner_headers)
     assert r.json() == {"ended_sessions": 1}
     assert place_order(client, tables["t1"], token, [{"item_id": menu["toast"].id, "quantity": 1}]).status_code == 401
 
 
-def test_rotated_token_locks_out_old_link_and_sessions(client, tables, menu, admin_headers):
+def test_rotated_token_locks_out_old_link_and_sessions(client, tables, menu, owner_headers):
     old_token = tables["t1"].qr_token
     session = start_session(client, tables["t1"])
-    r = client.post(f"/api/admin/tables/{tables['t1'].id}/rotate-token", headers=admin_headers)
+    r = client.post(f"/api/admin/tables/{tables['t1'].id}/rotate-token", headers=owner_headers)
     new_token = r.json()["qr_token"]
     assert new_token != old_token
     assert client.get(f"/api/public/tables/{old_token}").status_code == 404

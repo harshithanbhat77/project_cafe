@@ -11,7 +11,8 @@ from typing import Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator, model_validator
 
-from .models import Order, OrderStatus
+from .models import Order, OrderStatus, Role
+from .security import MIN_PASSWORD_LENGTH
 
 # Money is stored as Decimal but sent to the frontend as a JSON number.
 Money = Annotated[Decimal, PlainSerializer(float, return_type=float, when_used="json")]
@@ -58,6 +59,42 @@ class LoginIn(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+# ---------- Staff accounts ----------
+
+Password = Annotated[str, Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)]
+
+
+def _check_email(value: str) -> str:
+    email = value.strip().lower()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise ValueError("Enter a valid email address")
+    return email
+
+
+class UserOut(OrmModel):
+    id: int
+    name: str
+    email: str
+    role: Role
+    active: bool
+
+
+class UserIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    email: str = Field(max_length=255)
+    role: Role = Role.STAFF
+    password: Password
+
+    _email = field_validator("email")(_check_email)
+
+
+class UserUpdate(PartialUpdate):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    role: Role | None = None
+    active: bool | None = None
+    password: Password | None = None
 
 
 # ---------- Guest (public) ----------
@@ -245,6 +282,10 @@ class MenuItemUpdate(PartialUpdate):
 
     nullable_fields: ClassVar[frozenset[str]] = frozenset({"image_url"})
     _image_url = field_validator("image_url")(_check_image_url)
+
+
+class AvailabilityIn(BaseModel):
+    available: bool
 
 
 class MenuItemOut(OrmModel):

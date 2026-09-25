@@ -17,7 +17,7 @@ from sqlalchemy.pool import StaticPool  # noqa: E402
 from app.db import Base, get_db  # noqa: E402
 from app.limits import limiter  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import CafeTable, Category, MenuItem, User  # noqa: E402
+from app.models import CafeTable, Category, MenuItem, Role, User  # noqa: E402
 from app.security import hash_password, make_admin_token  # noqa: E402
 
 ADMIN_PASSWORD = "correct-horse-battery"
@@ -49,16 +49,29 @@ def client(db):
 
 
 @pytest.fixture
-def admin(db) -> User:
-    user = User(name="Owner", email="owner@test.local", password_hash=hash_password(ADMIN_PASSWORD))
+def owner(db) -> User:
+    user = User(name="Owner", email="owner@test.local", role=Role.OWNER, password_hash=hash_password(ADMIN_PASSWORD))
     db.add(user)
     db.commit()
     return user
 
 
 @pytest.fixture
-def admin_headers(admin) -> dict:
-    return {"Authorization": f"Bearer {make_admin_token(admin)}"}
+def owner_headers(owner) -> dict:
+    return {"Authorization": f"Bearer {make_admin_token(owner)}"}
+
+
+@pytest.fixture
+def staff(db) -> User:
+    user = User(name="Sam", email="sam@test.local", role=Role.STAFF, password_hash=hash_password(ADMIN_PASSWORD))
+    db.add(user)
+    db.commit()
+    return user
+
+
+@pytest.fixture
+def staff_headers(staff) -> dict:
+    return {"Authorization": f"Bearer {make_admin_token(staff)}"}
 
 
 @pytest.fixture

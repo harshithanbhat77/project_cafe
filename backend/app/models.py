@@ -29,7 +29,8 @@ def new_table_token() -> str:
 
 
 class Role(str, enum.Enum):
-    ADMIN = "ADMIN"
+    OWNER = "OWNER"  # everything, including prices, tables and staff accounts
+    STAFF = "STAFF"  # day-to-day service: orders, sold-out toggles, clearing tables
 
 
 class OrderStatus(str, enum.Enum):
@@ -48,7 +49,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
-    role: Mapped[Role] = mapped_column(Enum(Role, native_enum=False, length=20), default=Role.ADMIN)
+    role: Mapped[Role] = mapped_column(Enum(Role, native_enum=False, length=20), default=Role.STAFF)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
