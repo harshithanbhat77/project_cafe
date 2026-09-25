@@ -1,6 +1,7 @@
 """Admin tasks, run inside the api container:
 
-    docker compose exec api python -m app.cli create-admin --email owner@example.com
+    docker compose exec api python -m app.cli create-user --email owner@example.com            # owner
+    docker compose exec api python -m app.cli create-user --email sam@example.com --role staff
     docker compose exec api python -m app.cli seed-demo        # development only
 """
 
@@ -13,11 +14,11 @@ from sqlalchemy import select
 
 from .config import settings
 from .db import SessionLocal
-from .models import CafeTable, Category, MenuItem, User
+from .models import CafeTable, Category, MenuItem, Role, User
 from .security import MIN_PASSWORD_LENGTH, hash_password
 
 
-def create_admin(email: str, name: str) -> None:
+def create_user(email: str, name: str, role: Role) -> None:
     email = email.strip().lower()
     password = getpass.getpass(f"Password for {email} (min {MIN_PASSWORD_LENGTH} chars): ")
     if len(password) < MIN_PASSWORD_LENGTH:
@@ -29,11 +30,12 @@ def create_admin(email: str, name: str) -> None:
         user = db.scalar(select(User).where(User.email == email))
         if user:
             user.password_hash = hash_password(password)
+            user.role = role
             user.active = True
-            print(f"Updated password for {email}.")
+            print(f"Updated {email}: password reset, role {role.value}.")
         else:
-            db.add(User(name=name, email=email, password_hash=hash_password(password)))
-            print(f"Created admin {email}.")
+            db.add(User(name=name, email=email, role=role, password_hash=hash_password(password)))
+            print(f"Created {role.value.lower()} {email}.")
         db.commit()
 
 
@@ -80,14 +82,15 @@ def seed_demo() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     commands = parser.add_subparsers(dest="command", required=True)
-    admin = commands.add_parser("create-admin", help="Create an admin, or reset their password")
-    admin.add_argument("--email", required=True)
-    admin.add_argument("--name", default="Admin")
+    user = commands.add_parser("create-user", help="Create a dashboard login, or reset its password and role")
+    user.add_argument("--email", required=True)
+    user.add_argument("--name", default="Owner")
+    user.add_argument("--role", choices=["owner", "staff"], default="owner")
     commands.add_parser("seed-demo", help="Add a demo table and menu (development only)")
 
     args = parser.parse_args()
-    if args.command == "create-admin":
-        create_admin(args.email, args.name)
+    if args.command == "create-user":
+        create_user(args.email, args.name, Role(args.role.upper()))
     elif args.command == "seed-demo":
         seed_demo()
 

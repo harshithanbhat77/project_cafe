@@ -10,7 +10,7 @@ cp .env.example .env
 docker compose up --build
 
 # In another terminal: create your admin login and (optionally) demo data
-docker compose exec api python -m app.cli create-admin --email you@example.com
+docker compose exec api python -m app.cli create-user --email you@example.com   # add --role staff for staff
 docker compose exec api python -m app.cli seed-demo
 ```
 
@@ -35,8 +35,15 @@ Tests use in-memory SQLite, so no database is needed.
 - **Guests** scan a table's QR code (an unguessable token) and enter their name/phone. That creates a
   session tied to that one table. It expires after `SESSION_TTL_MINUTES`, and staff can end it early.
   Guests can only order at that table and only see their own orders.
-- **Staff** (`/api/admin/*`) need a JWT from `/api/admin/auth/login`. Every admin route checks it.
-  Staff see every order with the customer's name and phone, so they can cancel prank orders.
+- **Dashboard logins** (`/api/admin/*`) need a JWT from `/api/admin/auth/login`, and every admin route checks it.
+  There are two roles:
+  - **Staff** run service: see all orders with the customer's name/phone (so they can cancel prank
+    orders), move orders along, mark items sold out, and clear tables.
+  - **Owner** can also change the menu and prices, manage tables and QR codes, and add, deactivate or
+    reset the password of staff accounts.
+  Roles are checked against the database on every request, so deactivating someone or changing their
+  role applies immediately. Owner-only routes use `dependencies=OWNER_ONLY`, and
+  `tests/test_roles.py` fails if one is missing from its list.
 - **Clear table** (`POST /api/admin/tables/{id}/clear`) ends all guest sessions at a table, e.g. when guests leave.
   **Rotate token** issues a new QR code; the old printed code stops working.
 - Prices always come from the database. A retry with the same `idempotency_key` returns the
@@ -57,7 +64,7 @@ API on one domain, with automatic HTTPS.
 3. Start it:
    ```sh
    docker compose -f docker-compose.prod.yml up -d --build
-   docker compose -f docker-compose.prod.yml exec api python -m app.cli create-admin --email owner@yourcafe.com
+   docker compose -f docker-compose.prod.yml exec api python -m app.cli create-user --email owner@yourcafe.com
    ```
 4. Check `https://order.yourcafe.com/health` returns `{"status":"ok"}`.
 
