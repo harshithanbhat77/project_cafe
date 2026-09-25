@@ -46,6 +46,8 @@ Tests use in-memory SQLite, so no database is needed.
   `tests/test_roles.py` fails if one is missing from its list.
 - **Clear table** (`POST /api/admin/tables/{id}/clear`) ends all guest sessions at a table, e.g. when guests leave.
   **Rotate token** issues a new QR code; the old printed code stops working.
+- Service charge and tax (`SERVICE_CHARGE_PERCENT`, `TAX_PERCENT` in `.env`) are calculated on the server and
+  stored with each order, so changing a rate later doesn't change past bills.
 - Prices always come from the database. A retry with the same `idempotency_key` returns the
   original order instead of placing it twice.
 - Rate limits: login 5/min per IP, new guest sessions 10/hour per IP per table, orders 10 per 10 min per session.

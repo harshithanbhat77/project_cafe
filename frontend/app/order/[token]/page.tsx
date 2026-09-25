@@ -4,9 +4,9 @@ import { API, errorMessage } from '../../api'
 
 type Item = { id: number; name: string; description: string; price: number; image_url?: string; available: boolean }
 type Category = { id: number; name: string; items: Item[] }
-type Menu = { table: { name: string }; categories: Category[] }
+type Menu = { table: { name: string }; categories: Category[]; charges: { tax_label: string } }
 type OrderLine = { name: string; quantity: number; line_total: number }
-type Order = { reference: string; total: number; items: OrderLine[] }
+type Order = { reference: string; subtotal: number; service_charge: number; tax: number; total: number; items: OrderLine[] }
 type Cart = Record<number, number>
 
 export default function OrderPage({ params }: { params: { token: string } }) {
@@ -157,6 +157,24 @@ export default function OrderPage({ params }: { params: { token: string } }) {
             </p>
           ))}
           <hr />
+          {placed.service_charge + placed.tax > 0 && (
+            <>
+              <p>
+                Items<span style={{ float: 'right' }}>₹{placed.subtotal}</span>
+              </p>
+              {placed.service_charge > 0 && (
+                <p>
+                  Service charge<span style={{ float: 'right' }}>₹{placed.service_charge}</span>
+                </p>
+              )}
+              {placed.tax > 0 && (
+                <p>
+                  {menu.charges.tax_label}
+                  <span style={{ float: 'right' }}>₹{placed.tax}</span>
+                </p>
+              )}
+            </>
+          )}
           <p>
             <strong>Total</strong>
             <strong style={{ float: 'right' }}>₹{placed.total}</strong>
