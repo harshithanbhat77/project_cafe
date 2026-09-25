@@ -1,198 +1,200 @@
 'use client'
-import { FormEvent, useCallback, useEffect, useState } from 'react'
-import { API, errorMessage } from '../api'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { money } from '../api'
+import { useAdmin } from './admin-context'
+import type { Order, OrderStatus, Summary } from './types'
 
-type Order = {
-  id: number
-  reference: string
-  table_name: string
-  status: string
-  total: number
-  customer_name: string
-  customer_phone: string
-  notes: string | null
-  items: { name: string; quantity: number }[]
-}
+const POLL_MS = 5000
 
 // Button shown for each status to move the order forward.
-const NEXT_STEP: Record<string, { status: string; label: string }> = {
+const NEXT_STEP: Partial<Record<OrderStatus, { status: OrderStatus; label: string }>> = {
   PLACED: { status: 'ACCEPTED', label: 'Accept' },
   ACCEPTED: { status: 'PREPARING', label: 'Start preparing' },
   PREPARING: { status: 'READY', label: 'Mark ready' },
   READY: { status: 'COMPLETED', label: 'Complete' },
 }
-const CANCELLABLE = ['PLACED', 'ACCEPTED']
-const REFRESH_MS = 15000
+const CANCELLABLE: OrderStatus[] = ['PLACED', 'ACCEPTED']
+const FINISHED: OrderStatus[] = ['COMPLETED', 'CANCELLED']
 
-export default function Admin() {
-  const [token, setToken] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+export default function OrdersPage() {
+  const { call, isOwner } = useAdmin()
   const [orders, setOrders] = useState<Order[]>([])
-  const [err, setErr] = useState('')
+  const [summary, setSummary] = useState<Summary | null>(null)
+  const [error, setError] = useState('')
+  // New orders stay highlighted until someone acts on them.
+  const [highlighted, setHighlighted] = useState<number[]>([])
+  const seenIds = useRef<number[] | null>(null)
+  const audio = useRef<AudioContext | null>(null)
+  const [soundOn, setSoundOn] = useState(false)
 
-  /** Fetch an admin endpoint. A 401 (expired/invalid token) signs the admin out. */
-  const adminFetch = useCallback(
-    async (path: string, init: RequestInit = {}, authToken = token) => {
-      const r = await fetch(`${API}${path}`, {
-        ...init,
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}`, ...init.headers },
-      })
-      if (r.status === 401) {
-        setToken('')
-        setErr('Your login has expired. Please sign in again.')
+  const load = useCallback(async () => {
+    try {
+      const list = await call<Order[]>('/api/admin/orders')
+      // On the first load everything is "already seen", so there's no chime for old orders.
+      const seen = seenIds.current
+      const newOrders = seen ? list.filter((o) => o.status === 'PLACED' && !seen.includes(o.id)) : []
+      seenIds.current = list.map((o) => o.id)
+      if (newOrders.length > 0) {
+        setHighlighted((ids) => ids.concat(newOrders.map((o) => o.id)))
+        if (audio.current) chime(audio.current)
       }
-      return r
-    },
-    [token],
-  )
+      setOrders(list)
+      if (isOwner) setSummary(await call<Summary>('/api/admin/summary'))
+      setError('')
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }, [call, isOwner])
 
-  const load = useCallback(
-    async (authToken = token) => {
-      const r = await adminFetch('/api/admin/orders', {}, authToken)
-      if (r.ok) setOrders(await r.json())
-    },
-    [adminFetch, token],
-  )
-
-  // Poll so new orders show up without reloading the page.
   useEffect(() => {
-    if (!token) return
-    const timer = setInterval(() => load(), REFRESH_MS)
+    load()
+    const timer = setInterval(load, POLL_MS)
     return () => clearInterval(timer)
-  }, [token, load])
+  }, [load])
 
-  async function login(e: FormEvent) {
-    e.preventDefault()
-    setErr('')
-    const r = await fetch(`${API}/api/admin/auth/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    })
-    if (!r.ok) return setErr(await errorMessage(r, 'Invalid email or password'))
-    const d = await r.json()
-    setPassword('')
-    setToken(d.access_token)
-    load(d.access_token)
+  function enableSound() {
+    // Browsers only allow audio after the user clicks something, hence the button.
+    audio.current = new AudioContext()
+    setSoundOn(true)
+    chime(audio.current)
   }
 
-  async function move(order: Order, status: string) {
+  async function move(order: Order, status: OrderStatus) {
     if (status === 'CANCELLED' && !window.confirm(`Cancel order #${order.reference}?`)) return
-    const r = await adminFetch(`/api/admin/orders/${order.id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    })
-    if (!r.ok && r.status !== 401) setErr(await errorMessage(r, 'Could not update the order'))
+    setHighlighted((ids) => ids.filter((id) => id !== order.id))
+    try {
+      await call(`/api/admin/orders/${order.id}/status`, { method: 'PATCH', body: { status } })
+    } catch (e) {
+      setError((e as Error).message)
+    }
     load()
   }
 
-  if (!token)
-    return (
-      <main className="shell">
-        <form className="panel login" onSubmit={login}>
-          <div className="brand">
-            cafe<span>flow</span>
-          </div>
-          <h1>Welcome back</h1>
-          <p>Sign in to manage today’s service.</p>
-          <label>Email</label>
-          <input
-            className="input"
-            type="email"
-            autoComplete="username"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-          <label>Password</label>
-          <input
-            className="input"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          {err && <div className="error">{err}</div>}
-          <button className="primary" style={{ width: '100%' }}>
-            Open dashboard
-          </button>
-        </form>
-      </main>
-    )
-
-  const active = orders.filter((o) => !['COMPLETED', 'CANCELLED'].includes(o.status))
+  const active = orders.filter((o) => !FINISHED.includes(o.status))
+  const finished = orders.filter((o) => FINISHED.includes(o.status))
+  const waiting = orders.filter((o) => o.status === 'PLACED').length
   const today = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
 
   return (
-    <main className="shell">
-      <div className="topbar">
-        <div className="brand">
-          cafe<span>flow</span>
-        </div>
-        <div className="actions" style={{ marginTop: 0 }}>
-          <button className="pill" onClick={() => load()}>
-            Refresh
-          </button>
-          <button className="pill" onClick={() => setToken('')}>
-            Sign out
-          </button>
-        </div>
-      </div>
+    <>
       <div className="hero">
         <p>{today}</p>
         <h1>Keep the good stuff moving.</h1>
-        <p>Your service view, in one place.</p>
+        <p>New orders appear here automatically.</p>
       </div>
+
+      {!soundOn && (
+        <button className="pill no-print" onClick={enableSound} style={{ marginBottom: 14 }}>
+          🔔 Turn on sound for new orders
+        </button>
+      )}
+
       <div className="admin-grid">
         <div className="stat">
-          <span>New orders</span>
-          <b>{orders.filter((o) => o.status === 'PLACED').length}</b>
+          <span>Waiting to accept</span>
+          <b>{waiting}</b>
         </div>
-        <div className="stat">
-          <span>Active</span>
-          <b>{active.length}</b>
-        </div>
-        <div className="stat">
-          <span>Completed</span>
-          <b>{orders.filter((o) => o.status === 'COMPLETED').length}</b>
-        </div>
-      </div>
-      <div className="panel">
-        <h2>Today’s orders</h2>
-        {err && <div className="error">{err}</div>}
-        {orders.length === 0 ? (
-          <p>No orders yet. New table orders will appear here.</p>
-        ) : (
-          orders.map((o) => (
-            <div className="order" key={o.id}>
-              <div>
-                <span className="status">{o.status}</span>
-                <h3>
-                  #{o.reference} · {o.table_name}
-                </h3>
-                <div className="muted">
-                  {o.customer_name} · {o.customer_phone}
-                </div>
-                {o.notes && <div className="muted">Note: {o.notes}</div>}
-                {o.items.map((i) => (
-                  <div key={i.name}>
-                    {i.name} × {i.quantity}
-                  </div>
-                ))}
-                <strong>₹{o.total}</strong>
-              </div>
-              <div className="actions">
-                {NEXT_STEP[o.status] && (
-                  <button onClick={() => move(o, NEXT_STEP[o.status].status)}>{NEXT_STEP[o.status].label}</button>
-                )}
-                {CANCELLABLE.includes(o.status) && <button onClick={() => move(o, 'CANCELLED')}>Cancel</button>}
-              </div>
+        {isOwner && summary ? (
+          <>
+            <div className="stat">
+              <span>Orders today</span>
+              <b>{summary.orders}</b>
             </div>
+            <div className="stat">
+              <span>Revenue today</span>
+              <b>{money(summary.revenue)}</b>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="stat">
+              <span>In progress</span>
+              <b>{active.length - waiting}</b>
+            </div>
+            <div className="stat">
+              <span>Completed</span>
+              <b>{orders.filter((o) => o.status === 'COMPLETED').length}</b>
+            </div>
+          </>
+        )}
+      </div>
+      {isOwner && summary && summary.top_items.length > 0 && (
+        <p className="muted">
+          Best sellers today: {summary.top_items.map((i) => `${i.name} × ${i.quantity}`).join(', ')}
+        </p>
+      )}
+
+      <div className="panel">
+        <h2>Active orders</h2>
+        {error && <div className="error">{error}</div>}
+        {active.length === 0 ? (
+          <p>No active orders. New table orders will appear here.</p>
+        ) : (
+          active.map((o) => (
+            <OrderCard key={o.id} order={o} isNew={highlighted.includes(o.id)} onMove={(status) => move(o, status)} />
           ))
         )}
       </div>
-    </main>
+
+      {finished.length > 0 && (
+        <details className="panel">
+          <summary>
+            <strong>Finished ({finished.length})</strong>
+          </summary>
+          {finished.map((o) => (
+            <OrderCard key={o.id} order={o} isNew={false} onMove={() => {}} />
+          ))}
+        </details>
+      )}
+    </>
   )
+}
+
+function OrderCard({ order, isNew, onMove }: { order: Order; isNew: boolean; onMove: (status: OrderStatus) => void }) {
+  const next = NEXT_STEP[order.status]
+  const time = new Date(order.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  return (
+    <div className={isNew ? 'order new-order' : 'order'}>
+      <div>
+        <span className="status">{order.status}</span> <span className="muted">{time}</span>
+        <h3>
+          #{order.reference} · {order.table_name}
+        </h3>
+        <div className="muted">
+          {order.customer_name} · {order.customer_phone}
+        </div>
+        {order.notes && <div className="order-note">Note: {order.notes}</div>}
+        {order.items.map((i) => (
+          <div key={i.name}>
+            {i.name} × {i.quantity}
+          </div>
+        ))}
+        <strong>{money(order.total)}</strong>
+        {order.service_charge + order.tax > 0 && (
+          <span className="muted"> (incl. {money(order.service_charge + order.tax)} service & tax)</span>
+        )}
+      </div>
+      <div className="actions">
+        {next && <button onClick={() => onMove(next.status)}>{next.label}</button>}
+        {CANCELLABLE.includes(order.status) && <button onClick={() => onMove('CANCELLED')}>Cancel</button>}
+      </div>
+    </div>
+  )
+}
+
+/** Two short rising beeps, made with the Web Audio API (no sound file needed). */
+function chime(ctx: AudioContext) {
+  ;[880, 1320].forEach((frequency, i) => {
+    const oscillator = ctx.createOscillator()
+    const gain = ctx.createGain()
+    oscillator.frequency.value = frequency
+    oscillator.connect(gain)
+    gain.connect(ctx.destination)
+    const start = ctx.currentTime + i * 0.18
+    gain.gain.setValueAtTime(0.0001, start)
+    gain.gain.exponentialRampToValueAtTime(0.3, start + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.3)
+    oscillator.start(start)
+    oscillator.stop(start + 0.32)
+  })
 }

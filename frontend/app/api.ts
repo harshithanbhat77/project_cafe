@@ -11,3 +11,9 @@ export async function errorMessage(res: Response, fallback: string): Promise<str
   if (Array.isArray(detail) && detail[0]?.msg) return String(detail[0].msg).replace(/^Value error, /, '')
   return fallback
 }
+
+/** ₹240 or ₹320.50: whole amounts without decimals, others with two. */
+export function money(amount: number): string {
+  const fixed = amount.toFixed(2)
+  return `₹${fixed.endsWith('.00') ? fixed.slice(0, -3) : fixed}`
+}

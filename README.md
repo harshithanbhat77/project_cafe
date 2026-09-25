@@ -15,7 +15,11 @@ docker compose exec api python -m app.cli seed-demo
 ```
 
 - Customer demo: `http://localhost:3000/order/demo-table-7-token`
-- Admin: `http://localhost:3000/admin`
+- Dashboard: `http://localhost:3000/admin`
+  - **Orders**: new orders appear within 5 seconds; turn on sound for a chime. The owner also sees today's orders, revenue and best sellers.
+  - **Menu**: everyone can mark items sold out; the owner can add and edit items and prices and hide items or categories.
+  - **Tables**: clear a table when guests leave, and print QR cards. The owner can add, rename or disable tables and make a new QR code.
+  - **Staff** (owner only): add staff or owners, reset passwords, deactivate people.
 - API docs (development only): `http://localhost:8001/docs`
 
 The API refuses to start if `JWT_SECRET` is missing, short, or a known placeholder.
