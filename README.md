@@ -15,6 +15,8 @@ docker compose exec api python -m app.cli seed-demo
 ```
 
 - Customer demo: `http://localhost:3000/order/demo-table-7-token`
+  - Guests can add a note to their order and see an estimate of service charge and tax before ordering. The bill uses the server's numbers.
+  - After ordering, guests see **Your orders**, which updates every 10 seconds as staff move the order along.
 - Dashboard: `http://localhost:3000/admin`
   - **Orders**: new orders appear within 5 seconds; turn on sound for a chime. The owner also sees today's orders, revenue and best sellers.
   - **Menu**: everyone can mark items sold out; the owner can add and edit items and prices and hide items or categories.
