@@ -46,8 +46,44 @@ Tests use in-memory SQLite, so no database is needed.
 
 ## Deploying
 
-- Set `ENVIRONMENT=production` (turns off `/docs`, refuses demo data).
-- Put a reverse proxy with HTTPS in front (e.g. Caddy). Set `FORWARDED_ALLOW_IPS` to the proxy's IP
-  so rate limits see real client IPs.
-- `NEXT_PUBLIC_API_URL` is baked into the frontend at build time: set it before `docker compose build`.
-- Rate-limit counters are in memory. Run a single API process, or move them to Redis.
+Production uses `docker-compose.prod.yml`. Caddy is the only public service. It serves the site and the
+API on one domain, with automatic HTTPS.
+
+1. Get a server with Docker installed, and point your domain's DNS (an `A` record) at it. Open ports 80 and 443.
+2. Clone the repo and create `.env` from `.env.example`:
+   - `ENVIRONMENT=production`
+   - `DOMAIN=order.yourcafe.com`
+   - `JWT_SECRET` and `POSTGRES_PASSWORD`: generate each with `openssl rand -hex 32`.
+3. Start it:
+   ```sh
+   docker compose -f docker-compose.prod.yml up -d --build
+   docker compose -f docker-compose.prod.yml exec api python -m app.cli create-admin --email owner@yourcafe.com
+   ```
+4. Check `https://order.yourcafe.com/health` returns `{"status":"ok"}`.
+
+To update: `git pull && docker compose -f docker-compose.prod.yml up -d --build`. Migrations run automatically on start.
+
+In production, `/docs` is off and `seed-demo` refuses to run. Rate-limit counters are kept in memory, so run
+a single API process, or move the counters to Redis.
+
+### Backups
+
+`scripts/backup.sh` writes a compressed dump to `backups/` and deletes dumps older than 14 days (`KEEP_DAYS`).
+Run it daily with cron, and copy `backups/` off the server (e.g. to cloud storage):
+
+```cron
+0 3 * * * cd /path/to/project_cafe && scripts/backup.sh >> backups/backup.log 2>&1
+```
+
+Restore (this replaces the current data):
+
+```sh
+gunzip -c backups/cafeflow-YYYYMMDD-HHMMSS.sql.gz | docker compose -f docker-compose.prod.yml exec -T db psql -U cafeflow cafeflow
+```
+
+## CI
+
+`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`:
+- the backend tests;
+- the migrations against a real Postgres, plus `alembic check`, so the models and migrations can't drift apart;
+- the frontend production build (includes the type-check).

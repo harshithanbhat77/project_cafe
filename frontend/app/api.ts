@@ -1,4 +1,5 @@
-export const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'
+// Unset (e.g. `npm run dev`) → local API. Empty string (production) → same origin, routed by Caddy.
+export const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8001'
 
 /** Turn a FastAPI error response into one readable sentence. */
 export async function errorMessage(res: Response, fallback: string): Promise<string> {
