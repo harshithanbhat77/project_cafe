@@ -41,3 +41,9 @@ details.panel summary { cursor: pointer }
   .shell { max-width: none; padding: 0 }
   .qr-card { border: 1px solid #999 }
 }
+
+/* Guest order tracking */
+button.pill{border:0}
+.topbar-pills{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+textarea.input{font:inherit;resize:vertical}
+.status.cancelled{background:#f6d9d4;color:#a43e31}

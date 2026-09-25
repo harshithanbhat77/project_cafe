@@ -1,14 +1,15 @@
 'use client'
-import { FormEvent, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { API, errorMessage } from '../../api'
+import CartPanel from './CartPanel'
+import JoinForm from './JoinForm'
+import MenuView from './MenuView'
+import MyOrders from './MyOrders'
+import type { Cart, Menu, Order } from './types'
 
-type Item = { id: number; name: string; description: string; price: number; image_url?: string; available: boolean }
-type Category = { id: number; name: string; items: Item[] }
-type Menu = { table: { name: string }; categories: Category[]; charges: { tax_label: string } }
-type OrderLine = { name: string; quantity: number; line_total: number }
-type Order = { reference: string; subtotal: number; service_charge: number; tax: number; total: number; items: OrderLine[] }
-type Cart = Record<number, number>
+const POLL_MS = 10000
 
+/** The guest page: holds the state and talks to the API. The other files in this folder just render. */
 export default function OrderPage({ params }: { params: { token: string } }) {
   const tableUrl = `${API}/api/public/tables/${encodeURIComponent(params.token)}`
   const sessionKey = `cafeflow:${params.token}`
@@ -18,12 +19,13 @@ export default function OrderPage({ params }: { params: { token: string } }) {
   const [loadError, setLoadError] = useState('')
   const [error, setError] = useState('')
   const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
   const [session, setSession] = useState('')
+  const [orders, setOrders] = useState<Order[]>([])
+  const [view, setView] = useState<'menu' | 'orders'>('menu')
   const [cart, setCart] = useState<Cart>({})
+  const [notes, setNotes] = useState('')
   const [showCart, setShowCart] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [placed, setPlaced] = useState<Order>()
   // One idempotency key per cart: a double tap or network retry sends the same key,
   // so the server returns the existing order instead of creating a duplicate.
   const orderKey = useRef<string | null>(null)
@@ -43,37 +45,72 @@ export default function OrderPage({ params }: { params: { token: string } }) {
       .catch(() => setLoadError('This table link is no longer active.'))
   }, [tableUrl, sessionKey, nameKey])
 
-  function endSession(message: string) {
-    sessionStorage.removeItem(sessionKey)
-    sessionStorage.removeItem(nameKey)
-    setSession('')
-    setShowCart(false)
-    setError(message)
-  }
+  const endSession = useCallback(
+    (message: string) => {
+      sessionStorage.removeItem(sessionKey)
+      sessionStorage.removeItem(nameKey)
+      setSession('')
+      setOrders([])
+      setView('menu')
+      setShowCart(false)
+      setError(message)
+    },
+    [sessionKey, nameKey],
+  )
+
+  const loadOrders = useCallback(async () => {
+    try {
+      const r = await fetch(`${tableUrl}/orders`, { headers: { 'x-session-token': session } })
+      if (r.ok) setOrders(await r.json())
+      // Staff cleared the table, or the session expired.
+      else if (r.status === 401) endSession(await errorMessage(r, 'Your session has ended. Please enter your details again.'))
+    } catch {
+      // Offline for a moment: keep showing the last known status and try again on the next poll.
+    }
+  }, [tableUrl, session, endSession])
+
+  // Load orders once when the session starts, and keep them fresh while the guest is watching them.
+  useEffect(() => {
+    if (!session) return
+    loadOrders()
+    if (view !== 'orders') return
+    const timer = setInterval(loadOrders, POLL_MS)
+    return () => clearInterval(timer)
+  }, [session, view, loadOrders])
 
   function changeCart(id: number, delta: number) {
     orderKey.current = null // a different cart is a different order
     setCart((c) => ({ ...c, [id]: Math.max(0, (c[id] || 0) + delta) }))
   }
 
-  async function startSession(e: FormEvent) {
-    e.preventDefault()
+  function changeNotes(value: string) {
+    orderKey.current = null
+    setNotes(value)
+  }
+
+  async function startSession(guestName: string, phone: string) {
     setBusy(true)
     setError('')
-    const r = await fetch(`${tableUrl}/session`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name, phone }),
-    })
-    if (r.ok) {
-      const d = await r.json()
-      setSession(d.session_token)
-      sessionStorage.setItem(sessionKey, d.session_token)
-      sessionStorage.setItem(nameKey, name.trim())
-    } else {
-      setError(await errorMessage(r, 'Please enter a valid name and phone number.'))
+    try {
+      const r = await fetch(`${tableUrl}/session`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: guestName, phone }),
+      })
+      if (r.ok) {
+        const d = await r.json()
+        setSession(d.session_token)
+        setName(guestName.trim())
+        sessionStorage.setItem(sessionKey, d.session_token)
+        sessionStorage.setItem(nameKey, guestName.trim())
+      } else {
+        setError(await errorMessage(r, 'Please enter a valid name and phone number.'))
+      }
+    } catch {
+      setError('Could not reach the cafe. Check your connection and try again.')
+    } finally {
+      setBusy(false)
     }
-    setBusy(false)
   }
 
   async function checkout() {
@@ -89,12 +126,16 @@ export default function OrderPage({ params }: { params: { token: string } }) {
       const r = await fetch(`${tableUrl}/orders`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-session-token': session },
-        body: JSON.stringify({ items: lines, idempotency_key: orderKey.current }),
+        body: JSON.stringify({ items: lines, notes, idempotency_key: orderKey.current }),
       })
       if (r.ok) {
-        setPlaced(await r.json())
+        const order: Order = await r.json()
+        // A retried request returns the same order, so don't list it twice.
+        setOrders((list) => [order].concat(list.filter((o) => o.id !== order.id)))
         setCart({})
+        setNotes('')
         setShowCart(false)
+        setView('orders')
         orderKey.current = null
       } else if (r.status === 401) {
         endSession(await errorMessage(r, 'Your session has ended. Please enter your details again.'))
@@ -125,176 +166,49 @@ export default function OrderPage({ params }: { params: { token: string } }) {
       </main>
     )
 
-  const items = menu.categories.flatMap((c) => c.items)
-  const count = Object.values(cart).reduce((a, b) => a + b, 0)
-  const subtotal = items.reduce((s, i) => s + i.price * (cart[i.id] || 0), 0)
-  const topbar = (
-    <div className="topbar">
-      <div className="brand">
-        cafe<span>flow</span>
-      </div>
-      <span className="pill">{menu.table.name} · Dine in</span>
-    </div>
-  )
-
-  if (placed)
-    return (
-      <main className="shell">
-        {topbar}
-        <div className="hero">
-          <p>Your order is in</p>
-          <h1>Thank you - we&apos;re on it.</h1>
-          <p>
-            Order <b>#{placed.reference}</b> has been sent to the cafe.
-          </p>
-        </div>
-        <div className="panel">
-          <h2>Order summary</h2>
-          {placed.items.map((i) => (
-            <p key={i.name}>
-              {i.name} x {i.quantity}
-              <strong style={{ float: 'right' }}>₹{i.line_total}</strong>
-            </p>
-          ))}
-          <hr />
-          {placed.service_charge + placed.tax > 0 && (
-            <>
-              <p>
-                Items<span style={{ float: 'right' }}>₹{placed.subtotal}</span>
-              </p>
-              {placed.service_charge > 0 && (
-                <p>
-                  Service charge<span style={{ float: 'right' }}>₹{placed.service_charge}</span>
-                </p>
-              )}
-              {placed.tax > 0 && (
-                <p>
-                  {menu.charges.tax_label}
-                  <span style={{ float: 'right' }}>₹{placed.tax}</span>
-                </p>
-              )}
-            </>
-          )}
-          <p>
-            <strong>Total</strong>
-            <strong style={{ float: 'right' }}>₹{placed.total}</strong>
-          </p>
-          <button className="primary" onClick={() => setPlaced(undefined)}>
-            Back to menu
-          </button>
-        </div>
-      </main>
-    )
-
-  if (!session)
-    return (
-      <main className="shell">
-        {topbar}
-        <div className="hero">
-          <p>Welcome to CafeFlow</p>
-          <h1>What should we call you?</h1>
-          <p>We&apos;ll use this to bring your order to the right table. No password or OTP needed.</p>
-        </div>
-        <form className="panel" onSubmit={startSession}>
-          <label>Your name</label>
-          <input
-            className="input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Aanya Sharma"
-            required
-            minLength={2}
-            maxLength={100}
-          />
-          <label>Phone number</label>
-          <input
-            className="input"
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="e.g. +91 98765 43210"
-            required
-            minLength={7}
-            maxLength={32}
-          />
-          {error && <div className="error">{error}</div>}
-          <button className="primary" disabled={busy}>
-            {busy ? 'Opening menu...' : 'Continue to menu'}
-          </button>
-        </form>
-      </main>
-    )
-
   return (
     <main className="shell">
-      {topbar}
-      <section className="hero">
-        <p>Good food, good company</p>
-        <h1>Take a little time for something delicious.</h1>
-        <p>Hi {name || 'there'} - order from your table and we&apos;ll bring it right over.</p>
-      </section>
-      {error && !showCart && <div className="error">{error}</div>}
-      {menu.categories.map((c) => (
-        <section key={c.id}>
-          <h2 className="category">{c.name}</h2>
-          <div className="menu-grid">
-            {c.items.map((i) => (
-              <article className={i.available ? 'card' : 'card sold-out'} key={i.id}>
-                {i.image_url && <img src={i.image_url} alt="" />}
-                <div className="card-body">
-                  <h3>{i.name}</h3>
-                  <div className="description">{i.description}</div>
-                  <div className="price-row">
-                    <span className="price">₹{i.price}</span>
-                    <button className="add" disabled={!i.available} onClick={() => changeCart(i.id, 1)}>
-                      {!i.available ? 'Sold out' : `Add ${cart[i.id] ? `· ${cart[i.id]}` : ''}`}
-                    </button>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-      ))}
-      {count > 0 && (
-        <button className="cart" onClick={() => setShowCart(true)}>
-          View order · {count} items · ₹{subtotal}
-        </button>
-      )}
-      {showCart && (
-        <aside className="cart-panel">
-          <div className="topbar">
-            <h2 style={{ margin: 0 }}>Your order</h2>
-            <button className="pill" onClick={() => setShowCart(false)}>
-              Close
+      <div className="topbar">
+        <div className="brand">
+          cafe<span>flow</span>
+        </div>
+        <div className="topbar-pills">
+          {session && view === 'menu' && orders.length > 0 && (
+            <button className="pill" onClick={() => setView('orders')}>
+              Your orders ({orders.length})
             </button>
-          </div>
-          {items
-            .filter((i) => cart[i.id])
-            .map((i) => (
-              <div className="cart-line" key={i.id}>
-                <div>
-                  <strong>{i.name}</strong>
-                  <div>₹{i.price} each</div>
-                </div>
-                <div className="quantity">
-                  <button onClick={() => changeCart(i.id, -1)}>-</button>
-                  <strong>{cart[i.id]}</strong>
-                  <button onClick={() => changeCart(i.id, 1)}>+</button>
-                </div>
-              </div>
-            ))}
-          <p>
-            <strong>Total</strong>
-            <strong style={{ float: 'right' }}>₹{subtotal}</strong>
-          </p>
-          {error && <div className="error">{error}</div>}
-          <div className="cart-actions">
-            <button className="primary" onClick={checkout} disabled={busy || count === 0}>
-              {busy ? 'Placing order...' : 'Place order'}
-            </button>
-          </div>
-        </aside>
+          )}
+          <span className="pill">{menu.table.name} · Dine in</span>
+        </div>
+      </div>
+
+      {!session ? (
+        <JoinForm busy={busy} error={error} onJoin={startSession} />
+      ) : view === 'orders' ? (
+        <MyOrders orders={orders} taxLabel={menu.charges.tax_label} onOrderMore={() => setView('menu')} />
+      ) : (
+        <>
+          <MenuView
+            menu={menu}
+            name={name}
+            cart={cart}
+            error={showCart ? '' : error}
+            onAdd={(id) => changeCart(id, 1)}
+          />
+          <CartPanel
+            menu={menu}
+            cart={cart}
+            notes={notes}
+            open={showCart}
+            busy={busy}
+            error={error}
+            onOpen={() => setShowCart(true)}
+            onClose={() => setShowCart(false)}
+            onChange={changeCart}
+            onNotes={changeNotes}
+            onCheckout={checkout}
+          />
+        </>
       )}
     </main>
   )
