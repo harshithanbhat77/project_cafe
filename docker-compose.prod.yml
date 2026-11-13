@@ -23,6 +23,7 @@ services:
       FRONTEND_ORIGIN: https://${DOMAIN:?Set DOMAIN in .env}
       # Safe because the api has no published port: only Caddy can reach it.
       FORWARDED_ALLOW_IPS: "*"
+    volumes: [uploads:/data/uploads]  # menu photos and logos
     depends_on: {db: {condition: service_healthy}}
 
   web:
@@ -48,5 +49,6 @@ services:
 
 volumes:
   pgdata: {}
+  uploads: {}
   caddy_data: {}
   caddy_config: {}

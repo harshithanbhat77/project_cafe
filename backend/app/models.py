@@ -33,6 +33,18 @@ class Role(str, enum.Enum):
     STAFF = "STAFF"  # day-to-day service: orders, sold-out toggles, clearing tables
 
 
+class Diet(str, enum.Enum):
+    VEG = "VEG"  # vegetarian
+    EGG = "EGG"  # vegetarian with egg
+    NON_VEG = "NON_VEG"
+    VEGAN = "VEGAN"
+
+
+class ServiceRequestKind(str, enum.Enum):
+    WAITER = "WAITER"  # "please come to our table"
+    BILL = "BILL"  # "we'd like the bill"
+
+
 class OrderStatus(str, enum.Enum):
     PLACED = "PLACED"
     ACCEPTED = "ACCEPTED"
@@ -90,6 +102,10 @@ class MenuItem(Base):
     # available=False: temporarily sold out (still shown). active=False: hidden from the menu.
     available: Mapped[bool] = mapped_column(Boolean, default=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Shown to guests as badges. diet=None means "not specified".
+    diet: Mapped[Diet | None] = mapped_column(Enum(Diet, native_enum=False, length=20))
+    spicy: Mapped[bool] = mapped_column(Boolean, default=False)
+    bestseller: Mapped[bool] = mapped_column(Boolean, default=False)
 
     category: Mapped[Category] = relationship(back_populates="items")
 
@@ -145,6 +161,42 @@ class Order(Base):
     def reference(self) -> str:
         """Human-friendly order number for staff and guests. Not a secret."""
         return f"CF-{self.id:05d}"
+
+
+class ServiceRequest(Base):
+    """A guest asking for a waiter or the bill. Open until staff mark it done
+    (or the table is cleared)."""
+
+    __tablename__ = "service_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    table_id: Mapped[int] = mapped_column(ForeignKey("cafe_tables.id"), index=True)
+    customer_session_id: Mapped[int] = mapped_column(ForeignKey("customer_sessions.id"), index=True)
+    kind: Mapped[ServiceRequestKind] = mapped_column(Enum(ServiceRequestKind, native_enum=False, length=20))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    resolved_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+    table: Mapped[CafeTable] = relationship()
+    customer_session: Mapped[CustomerSession] = relationship()
+
+
+class RestaurantSettings(Base):
+    """The restaurant's name, branding and bill rates. There is exactly one row (id 1),
+    created from the .env defaults the first time it's needed (see restaurant.py)."""
+
+    __tablename__ = "restaurant_settings"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_restaurant_settings_single_row"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    logo_url: Mapped[str | None] = mapped_column(String(500))
+    accent_color: Mapped[str] = mapped_column(String(7))  # "#rrggbb"
+    currency: Mapped[str] = mapped_column(String(3))  # ISO 4217, e.g. "INR"
+    service_charge_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2))
+    tax_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2))
+    tax_label: Mapped[str] = mapped_column(String(20))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
 class OrderItem(Base):
