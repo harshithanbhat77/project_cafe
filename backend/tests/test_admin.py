@@ -21,13 +21,21 @@ ADMIN_ENDPOINTS = [
     ("post", "/api/admin/menu/1/availability"),
     ("get", "/api/admin/categories"),
     ("post", "/api/admin/categories"),
+    ("patch", "/api/admin/categories/1"),
     ("get", "/api/admin/tables"),
     ("post", "/api/admin/tables"),
+    ("patch", "/api/admin/tables/1"),
     ("post", "/api/admin/tables/1/clear"),
     ("post", "/api/admin/tables/1/rotate-token"),
     ("get", "/api/admin/users"),
     ("post", "/api/admin/users"),
     ("patch", "/api/admin/users/1"),
+    ("get", "/api/admin/summary"),
+    ("get", "/api/admin/settings"),
+    ("patch", "/api/admin/settings"),
+    ("post", "/api/admin/uploads"),
+    ("get", "/api/admin/requests"),
+    ("post", "/api/admin/requests/1/resolve"),
 ]
 
 
@@ -40,6 +48,23 @@ def _token(sub: str, secret: str = settings.jwt_secret, minutes: int = 5) -> dic
 @pytest.mark.parametrize("method,path", ADMIN_ENDPOINTS)
 def test_admin_endpoints_require_login(client, method, path):
     assert getattr(client, method)(path).status_code == 401
+
+
+def test_admin_endpoint_list_is_complete():
+    """A new /api/admin route must be added to ADMIN_ENDPOINTS, so it gets the login check above."""
+    import re
+
+    from fastapi.routing import APIRoute
+
+    from app.main import app
+
+    in_app = {
+        (method.lower(), re.sub(r"\{\w+\}", "1", route.path))
+        for route in app.routes
+        if isinstance(route, APIRoute) and route.path.startswith("/api/admin") and route.path != "/api/admin/auth/login"
+        for method in route.methods
+    }
+    assert in_app == set(ADMIN_ENDPOINTS)
 
 
 def test_bad_tokens_are_rejected(client, owner):
@@ -152,3 +177,51 @@ def test_create_and_update_table(client, owner_headers):
     table_id = r.json()["id"]
     r = client.patch(f"/api/admin/tables/{table_id}", json={"active": False}, headers=owner_headers)
     assert r.json()["active"] is False and r.json()["name"] == "Patio 1"
+
+
+def test_dietary_tags(client, tables, menu, owner_headers):
+    toast = menu["toast"].id
+    r = client.patch(
+        f"/api/admin/menu/{toast}", json={"diet": "VEG", "spicy": True, "bestseller": True}, headers=owner_headers
+    )
+    assert r.status_code == 200, r.text
+    assert (r.json()["diet"], r.json()["spicy"], r.json()["bestseller"]) == ("VEG", True, True)
+
+    guest_menu = client.get(f"/api/public/tables/{tables['t1'].qr_token}").json()
+    item = next(i for c in guest_menu["categories"] for i in c["items"] if i["id"] == toast)
+    assert (item["diet"], item["spicy"], item["bestseller"]) == ("VEG", True, True)
+
+    # Diet can be cleared; spicy/bestseller can't be null; unknown diets are rejected.
+    assert client.patch(f"/api/admin/menu/{toast}", json={"diet": None}, headers=owner_headers).json()["diet"] is None
+    assert client.patch(f"/api/admin/menu/{toast}", json={"spicy": None}, headers=owner_headers).status_code == 422
+    assert client.patch(f"/api/admin/menu/{toast}", json={"diet": "KETO"}, headers=owner_headers).status_code == 422
+
+
+def test_new_items_have_no_tags_by_default(client, menu, owner_headers):
+    category_id = menu["toast"].category_id
+    r = client.post(
+        "/api/admin/menu", json={"category_id": category_id, "name": "Tea", "price": "50"}, headers=owner_headers
+    )
+    assert (r.json()["diet"], r.json()["spicy"], r.json()["bestseller"]) == (None, False, False)
+
+
+def test_tables_show_what_is_happening(client, tables, menu, staff_headers):
+    def status():
+        rows = client.get("/api/admin/tables", headers=staff_headers).json()
+        return {r["name"]: (r["guests"], r["open_orders"], r["open_requests"]) for r in rows}
+
+    assert status() == {"Table 1": (0, 0, []), "Table 2": (0, 0, [])}
+
+    alice = start_session(client, tables["t1"], name="Alice")
+    start_session(client, tables["t1"], name="Bob")
+    order = place_order(client, tables["t1"], alice, [{"item_id": menu["toast"].id, "quantity": 1}]).json()
+    client.post(
+        f"/api/public/tables/{tables['t1'].qr_token}/requests", json={"kind": "BILL"}, headers={"X-Session-Token": alice}
+    )
+    assert status()["Table 1"] == (2, 1, ["BILL"])
+
+    # Served orders no longer count as open; clearing the table ends sessions and requests.
+    for step in ("ACCEPTED", "PREPARING", "READY", "COMPLETED"):
+        client.patch(f"/api/admin/orders/{order['id']}/status", json={"status": step}, headers=staff_headers)
+    client.post(f"/api/admin/tables/{tables['t1'].id}/clear", headers=staff_headers)
+    assert status()["Table 1"] == (0, 0, [])

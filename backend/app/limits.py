@@ -27,3 +27,4 @@ limiter = Limiter(key_func=get_remote_address)
 LOGIN_LIMIT = "5/minute"  # per IP
 SESSION_LIMIT = "10/hour"  # new guest sessions per IP per table
 ORDER_LIMIT = "10/10minutes"  # orders per guest session
+SERVICE_REQUEST_LIMIT = "6/10minutes"  # waiter / bill requests per guest session

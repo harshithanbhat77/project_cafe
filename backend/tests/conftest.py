@@ -1,10 +1,12 @@
 """Test setup: an in-memory SQLite database per test, no external services needed."""
 
 import os
+import tempfile
 
 # Must be set before the app (and its settings) are imported.
 os.environ.setdefault("JWT_SECRET", "test-secret-that-is-at-least-32-characters-long")
 os.environ.setdefault("DATABASE_URL", "sqlite://")
+os.environ.setdefault("UPLOAD_DIR", tempfile.mkdtemp(prefix="cafeflow-test-uploads-"))
 
 from decimal import Decimal  # noqa: E402
 
