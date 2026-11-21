@@ -4,7 +4,7 @@
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
-from .config import settings
+from .models import RestaurantSettings
 
 CENT = Decimal("0.01")
 
@@ -21,7 +21,7 @@ class Bill:
     total: Decimal
 
 
-def make_bill(subtotal: Decimal) -> Bill:
-    service_charge = percent_of(subtotal, settings.service_charge_percent)
-    tax = percent_of(subtotal + service_charge, settings.tax_percent)
+def make_bill(subtotal: Decimal, rates: RestaurantSettings) -> Bill:
+    service_charge = percent_of(subtotal, rates.service_charge_percent)
+    tax = percent_of(subtotal + service_charge, rates.tax_percent)
     return Bill(subtotal, service_charge, tax, subtotal + service_charge + tax)

@@ -4,7 +4,8 @@ ENV PYTHONPATH=/app PYTHONUNBUFFERED=1
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-RUN useradd --system --no-create-home cafeflow
+RUN useradd --system --no-create-home cafeflow \
+    && mkdir -p /data/uploads && chown cafeflow /data/uploads
 USER cafeflow
 # Migrations are the only way the schema is created. If they fail, the container stops.
 # --proxy-headers: trust X-Forwarded-For from the reverse proxy so rate limits see real client IPs.

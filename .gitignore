@@ -1,6 +1,7 @@
 .env
 node_modules/
 frontend/.next/
+frontend/*.tsbuildinfo
 backend/__pycache__/
 backend/app/__pycache__/
 backend/migrations/__pycache__/
@@ -26,6 +27,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!frontend/lib/
 lib64/
 parts/
 sdist/

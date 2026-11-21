@@ -11,7 +11,7 @@ from typing import Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator, model_validator
 
-from .models import Order, OrderStatus, Role
+from .models import Diet, Order, OrderStatus, Role, ServiceRequest, ServiceRequestKind
 from .security import MIN_PASSWORD_LENGTH
 
 # Money is stored as Decimal but sent to the frontend as a JSON number.
@@ -19,10 +19,14 @@ Money = Annotated[Decimal, PlainSerializer(float, return_type=float, when_used="
 Price = Annotated[Decimal, Field(ge=0, le=100000, max_digits=10, decimal_places=2)]
 
 
+# Files saved by POST /api/admin/uploads are served from here.
+UPLOADED_IMAGE = re.compile(r"/api/uploads/[A-Za-z0-9_-]{8,64}\.webp")
+
+
 def _check_image_url(value: str | None) -> str | None:
     if value is None or value == "":
         return None
-    if not value.startswith("https://"):
+    if not (value.startswith("https://") or UPLOADED_IMAGE.fullmatch(value)):
         raise ValueError("Image URL must start with https://")
     return value
 
@@ -143,6 +147,15 @@ class PublicTable(BaseModel):
     name: str
 
 
+class Brand(OrmModel):
+    """What guests (and the sign-in page) see of the restaurant."""
+
+    name: str
+    logo_url: str | None
+    accent_color: str
+    currency: str
+
+
 class PublicMenuItem(OrmModel):
     id: int
     name: str
@@ -150,6 +163,9 @@ class PublicMenuItem(OrmModel):
     price: Money
     image_url: str | None
     available: bool
+    diet: Diet | None
+    spicy: bool
+    bestseller: bool
 
 
 class PublicCategory(BaseModel):
@@ -168,6 +184,7 @@ class Charges(BaseModel):
 
 
 class PublicMenu(BaseModel):
+    restaurant: Brand
     table: PublicTable
     categories: list[PublicCategory]
     charges: Charges
@@ -298,6 +315,9 @@ class MenuItemIn(BaseModel):
     image_url: str | None = Field(default=None, max_length=500)
     available: bool = True
     active: bool = True
+    diet: Diet | None = None
+    spicy: bool = False
+    bestseller: bool = False
 
     _image_url = field_validator("image_url")(_check_image_url)
 
@@ -315,8 +335,11 @@ class MenuItemUpdate(PartialUpdate):
     image_url: str | None = Field(default=None, max_length=500)
     available: bool | None = None
     active: bool | None = None
+    diet: Diet | None = None
+    spicy: bool | None = None
+    bestseller: bool | None = None
 
-    nullable_fields: ClassVar[frozenset[str]] = frozenset({"image_url"})
+    nullable_fields: ClassVar[frozenset[str]] = frozenset({"image_url", "diet"})
     _image_url = field_validator("image_url")(_check_image_url)
 
 
@@ -333,6 +356,9 @@ class MenuItemOut(OrmModel):
     image_url: str | None
     available: bool
     active: bool
+    diet: Diet | None
+    spicy: bool
+    bestseller: bool
 
 
 # ---------- Admin: tables ----------
@@ -353,3 +379,87 @@ class TableOut(OrmModel):
     name: str
     qr_token: str
     active: bool
+
+
+class TableStatusOut(TableOut):
+    """A table plus what's happening at it right now, for the Tables screen."""
+
+    guests: int  # live guest sessions
+    open_orders: int  # placed, accepted, preparing or ready
+    open_requests: list[ServiceRequestKind]  # waiter / bill requests not yet dealt with
+
+
+# ---------- Admin: restaurant settings ----------
+
+Percent = Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)]
+
+
+class RestaurantOut(OrmModel):
+    name: str
+    logo_url: str | None
+    accent_color: str
+    currency: str
+    service_charge_percent: Money
+    tax_percent: Money
+    tax_label: str
+
+
+class RestaurantUpdate(PartialUpdate):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    logo_url: str | None = Field(default=None, max_length=500)
+    accent_color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    currency: str | None = Field(default=None, pattern=r"^[A-Za-z]{3}$")
+    service_charge_percent: Percent | None = None
+    tax_percent: Percent | None = None
+    tax_label: str | None = Field(default=None, min_length=1, max_length=20)
+
+    nullable_fields: ClassVar[frozenset[str]] = frozenset({"logo_url"})
+    _logo_url = field_validator("logo_url")(_check_image_url)
+
+    @field_validator("name", "tax_label")
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("This can't be blank")
+        return value.strip() if value is not None else None
+
+    @field_validator("accent_color", "currency")
+    @classmethod
+    def normalise_case(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.lower() if value.startswith("#") else value.upper()
+
+
+class UploadOut(BaseModel):
+    url: str
+
+
+# ---------- Service requests (call waiter / ask for the bill) ----------
+
+
+class ServiceRequestIn(BaseModel):
+    kind: ServiceRequestKind
+
+
+class ServiceRequestOut(OrmModel):
+    """What a guest sees of their own request."""
+
+    id: int
+    kind: ServiceRequestKind
+    created_at: datetime
+
+
+class AdminServiceRequestOut(ServiceRequestOut):
+    table_name: str
+    customer_name: str
+
+    @classmethod
+    def from_request(cls, request: ServiceRequest) -> "AdminServiceRequestOut":
+        return cls(
+            id=request.id,
+            kind=request.kind,
+            created_at=request.created_at,
+            table_name=request.table.name,
+            customer_name=request.customer_session.customer_name,
+        )

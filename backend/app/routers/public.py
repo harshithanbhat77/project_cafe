@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from ..config import settings
 from ..db import get_db
-from ..limits import ORDER_LIMIT, SESSION_LIMIT, guest_session, ip_and_table, limiter
+from ..limits import ORDER_LIMIT, SERVICE_REQUEST_LIMIT, SESSION_LIMIT, guest_session, ip_and_table, limiter
 from ..models import (
     Category,
     CustomerSession,
@@ -19,10 +19,13 @@ from ..models import (
     Order,
     OrderItem,
     OrderStatus,
+    ServiceRequest,
     with_order_details,
 )
 from ..pricing import make_bill
+from ..restaurant import get_restaurant
 from ..schemas import (
+    Brand,
     Charges,
     CustomerSessionIn,
     CustomerSessionOut,
@@ -32,6 +35,8 @@ from ..schemas import (
     PublicMenu,
     PublicMenuItem,
     PublicTable,
+    ServiceRequestIn,
+    ServiceRequestOut,
 )
 from ..security import current_customer_session, get_active_table, new_session_token
 
@@ -55,12 +60,18 @@ def get_menu(table_token: str, db: Session = Depends(get_db)):
             public_categories.append(
                 PublicCategory(id=category.id, name=category.name, description=category.description, items=items)
             )
+    restaurant = get_restaurant(db)
     charges = Charges(
-        service_charge_percent=settings.service_charge_percent,
-        tax_percent=settings.tax_percent,
-        tax_label=settings.tax_label,
+        service_charge_percent=restaurant.service_charge_percent,
+        tax_percent=restaurant.tax_percent,
+        tax_label=restaurant.tax_label,
     )
-    return PublicMenu(table=PublicTable(name=table.name), categories=public_categories, charges=charges)
+    return PublicMenu(
+        restaurant=Brand.model_validate(restaurant),
+        table=PublicTable(name=table.name),
+        categories=public_categories,
+        charges=charges,
+    )
 
 
 @router.post("/session", response_model=CustomerSessionOut)
@@ -144,7 +155,7 @@ def place_order(
             )
         )
 
-    bill = make_bill(subtotal)
+    bill = make_bill(subtotal, get_restaurant(db))
     order = Order(
         table_id=session.table_id,
         customer_session_id=session.id,
@@ -170,6 +181,41 @@ def place_order(
             raise
         return OrderOut.from_order(existing)
     return OrderOut.from_order(_find_order(db, session.id, data.idempotency_key))
+
+
+@router.get("/requests", response_model=list[ServiceRequestOut])
+def my_open_requests(session: CustomerSession = Depends(current_customer_session), db: Session = Depends(get_db)):
+    """The guest's requests that staff haven't dealt with yet."""
+    return db.scalars(
+        select(ServiceRequest)
+        .where(ServiceRequest.customer_session_id == session.id, ServiceRequest.resolved_at.is_(None))
+        .order_by(ServiceRequest.id)
+    ).all()
+
+
+@router.post("/requests", response_model=ServiceRequestOut)
+@limiter.limit(SERVICE_REQUEST_LIMIT, key_func=guest_session)
+def call_staff(
+    request: Request,
+    data: ServiceRequestIn,
+    session: CustomerSession = Depends(current_customer_session),
+    db: Session = Depends(get_db),
+):
+    """Ask for a waiter or the bill. Asking again while the first is still open
+    returns the same request, so staff see it once."""
+    open_request = db.scalar(
+        select(ServiceRequest).where(
+            ServiceRequest.customer_session_id == session.id,
+            ServiceRequest.kind == data.kind,
+            ServiceRequest.resolved_at.is_(None),
+        )
+    )
+    if open_request:
+        return open_request
+    service_request = ServiceRequest(table_id=session.table_id, customer_session_id=session.id, kind=data.kind)
+    db.add(service_request)
+    db.commit()
+    return service_request
 
 
 def _find_order(db: Session, session_id: int, idempotency_key: str) -> Order | None:

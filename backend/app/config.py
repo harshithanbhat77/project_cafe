@@ -23,12 +23,18 @@ class Settings(BaseSettings):
     session_ttl_minutes: int = 180
     frontend_origin: str = "http://localhost:3000"
 
+    # First-run defaults for the restaurant's settings. After the first start the owner
+    # changes these in the dashboard (Settings), and the values here are no longer used.
+    restaurant_name: str = "CafeFlow"
+    currency: str = "INR"
     # Added to every bill. Service charge is a % of the food total; tax is a % of food + service.
     service_charge_percent: Decimal = Field(default=Decimal("0"), ge=0, le=100)
     tax_percent: Decimal = Field(default=Decimal("0"), ge=0, le=100)
     tax_label: str = "GST"
     # The restaurant's local time zone, used to decide what "today" means in the daily summary.
     timezone: str = "Asia/Kolkata"
+    # Where uploaded menu photos and logos are stored (a Docker volume in production).
+    upload_dir: str = "/data/uploads"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -6,16 +6,19 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-from app.config import settings
 from app.models import Order, OrderStatus
 from app.pricing import percent_of
+from app.restaurant import get_restaurant
 from conftest import place_order, start_session
 
 
 @pytest.fixture
-def charges(monkeypatch):
-    monkeypatch.setattr(settings, "service_charge_percent", Decimal("10"))
-    monkeypatch.setattr(settings, "tax_percent", Decimal("5"))
+def charges(db):
+    restaurant = get_restaurant(db)
+    restaurant.service_charge_percent = Decimal("10")
+    restaurant.tax_percent = Decimal("5")
+    db.commit()
+    return restaurant
 
 
 def test_rounding_is_half_up():
@@ -31,10 +34,10 @@ def test_bill_adds_service_then_tax(client, tables, menu, charges):
     assert (order["subtotal"], order["service_charge"], order["tax"], order["total"]) == (560.5, 56.05, 30.83, 647.38)
 
 
-def test_bill_is_frozen_when_rates_change(client, db, tables, menu, charges, monkeypatch):
+def test_bill_is_frozen_when_rates_change(client, db, tables, menu, charges, owner_headers):
     session = start_session(client, tables["t1"])
     order_id = place_order(client, tables["t1"], session, [{"item_id": menu["toast"].id, "quantity": 1}]).json()["id"]
-    monkeypatch.setattr(settings, "tax_percent", Decimal("18"))
+    assert client.patch("/api/admin/settings", json={"tax_percent": "18"}, headers=owner_headers).status_code == 200
     orders = client.get(f"/api/public/tables/{tables['t1'].qr_token}/orders", headers={"X-Session-Token": session}).json()
     assert [o["total"] for o in orders if o["id"] == order_id] == [277.2]  # 240 + 24 + 13.20
 

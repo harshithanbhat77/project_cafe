@@ -1,7 +1,10 @@
 import logging
+import mimetypes
+from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
@@ -10,7 +13,17 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .db import get_db
 from .limits import limiter
-from .routers import admin_auth, admin_menu, admin_orders, admin_tables, admin_users, public
+from .routers import (
+    admin_auth,
+    admin_menu,
+    admin_orders,
+    admin_requests,
+    admin_tables,
+    admin_uploads,
+    admin_users,
+    public,
+    restaurant,
+)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -56,3 +69,23 @@ app.include_router(admin_orders.router)
 app.include_router(admin_menu.router)
 app.include_router(admin_tables.router)
 app.include_router(admin_users.router)
+app.include_router(admin_uploads.router)
+app.include_router(admin_requests.router)
+app.include_router(restaurant.public_router)
+app.include_router(restaurant.admin_router)
+
+
+class UploadedFiles(StaticFiles):
+    """Uploaded images never change (each upload gets a new random name), so browsers can cache them forever."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+
+# Slim Linux images don't always know .webp; without this it would be served as text/plain,
+# which browsers refuse to show as an image because of the nosniff header.
+mimetypes.add_type("image/webp", ".webp")
+Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
+app.mount("/api/uploads", UploadedFiles(directory=settings.upload_dir), name="uploads")

@@ -1,3 +1,5 @@
+import type { Diet } from '@/components/diet-marker'
+
 export type Role = 'OWNER' | 'STAFF'
 export type OrderStatus = 'PLACED' | 'ACCEPTED' | 'PREPARING' | 'READY' | 'COMPLETED' | 'CANCELLED'
 
@@ -38,6 +40,32 @@ export type MenuItem = {
   image_url: string | null
   available: boolean
   active: boolean
+  diet: Diet | null
+  spicy: boolean
+  bestseller: boolean
+}
+
+export type ServiceRequest = {
+  id: number
+  kind: 'WAITER' | 'BILL'
+  created_at: string
+  table_name: string
+  customer_name: string
+}
+
+export type Brand = { name: string; logo_url: string | null; accent_color: string; currency: string }
+
+export type Restaurant = Brand & {
+  service_charge_percent: number
+  tax_percent: number
+  tax_label: string
 }
 
 export type Table = { id: number; name: string; qr_token: string; active: boolean }
+
+/** A table plus what's happening there right now. */
+export type TableStatus = Table & {
+  guests: number
+  open_orders: number
+  open_requests: ('WAITER' | 'BILL')[]
+}
