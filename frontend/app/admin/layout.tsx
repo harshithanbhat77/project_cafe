@@ -48,7 +48,7 @@ function AdminShell({ children }: { children: ReactNode }) {
   const name = brand?.name ?? 'Dashboard'
 
   return (
-    <div className="min-h-dvh bg-background md:grid md:grid-cols-[15rem_1fr]">
+    <div className="min-h-dvh bg-background md:grid md:grid-cols-[15rem_1fr] print:block">
       {/* Desktop sidebar */}
       <aside className="sticky top-0 hidden h-dvh flex-col border-r bg-card md:flex print:hidden">
         <Sidebar />

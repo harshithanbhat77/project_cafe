@@ -2,8 +2,8 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from ..db import get_db
@@ -16,16 +16,28 @@ router = APIRouter(prefix="/api/admin", tags=["admin: service requests"], depend
 
 
 @router.get("/requests", response_model=list[AdminServiceRequestOut])
-def open_requests(db: Session = Depends(get_db)):
-    """Open requests from guests who are still at their table, oldest first."""
-    requests = db.scalars(
-        select(ServiceRequest)
-        .join(CustomerSession)
-        .where(
-            ServiceRequest.resolved_at.is_(None),
-            CustomerSession.active,
-            CustomerSession.expires_at > datetime.now(timezone.utc),
+def open_requests(
+    created_after: datetime | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    """Open requests plus an optional recent-event window used for owner notifications."""
+    now = datetime.now(timezone.utc)
+    active_request = and_(
+        ServiceRequest.resolved_at.is_(None),
+        CustomerSession.active,
+        CustomerSession.expires_at > now,
+    )
+    query = select(ServiceRequest).join(CustomerSession)
+    query = query.where(
+        or_(
+            active_request,
+            and_(ServiceRequest.created_at >= created_after, ServiceRequest.resolved_at.is_not(None)),
         )
+        if created_after
+        else active_request
+    )
+    requests = db.scalars(
+        query
         .options(joinedload(ServiceRequest.table), joinedload(ServiceRequest.customer_session))
         .order_by(ServiceRequest.created_at, ServiceRequest.id)
     ).all()

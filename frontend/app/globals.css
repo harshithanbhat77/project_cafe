@@ -148,3 +148,44 @@
     cursor: pointer;
     }
 }
+
+@page {
+    size: A4;
+    margin: 12mm;
+}
+
+@media print {
+    html,
+    body {
+      background: #fff !important;
+      color: #111827 !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .invoice-paper {
+      width: 100% !important;
+      max-width: none !important;
+      overflow: visible !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+    }
+
+    .invoice-items {
+      table-layout: fixed;
+    }
+
+    .invoice-items-wrapper {
+      overflow: visible !important;
+    }
+
+    .invoice-items thead {
+      display: table-header-group;
+    }
+
+    .invoice-items tr {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+}

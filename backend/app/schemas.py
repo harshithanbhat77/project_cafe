@@ -228,6 +228,9 @@ class AdminOrderOut(OrderOut):
 
     customer_name: str
     customer_phone: str
+    service_charge_percent: Money | None
+    tax_percent: Money | None
+    tax_label: str | None
 
     @classmethod
     def from_order(cls, order: Order) -> "AdminOrderOut":
@@ -235,6 +238,9 @@ class AdminOrderOut(OrderOut):
             **_order_fields(order),
             customer_name=order.customer_name,
             customer_phone=order.customer_phone,
+            service_charge_percent=order.service_charge_percent,
+            tax_percent=order.tax_percent,
+            tax_label=order.tax_label_snapshot,
         )
 
 
@@ -453,6 +459,7 @@ class ServiceRequestOut(OrmModel):
 class AdminServiceRequestOut(ServiceRequestOut):
     table_name: str
     customer_name: str
+    resolved_at: datetime | None
 
     @classmethod
     def from_request(cls, request: ServiceRequest) -> "AdminServiceRequestOut":
@@ -462,4 +469,5 @@ class AdminServiceRequestOut(ServiceRequestOut):
             created_at=request.created_at,
             table_name=request.table.name,
             customer_name=request.customer_session.customer_name,
+            resolved_at=request.resolved_at,
         )

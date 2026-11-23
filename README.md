@@ -51,9 +51,11 @@ settings and printable QR cards.
 - **Need help?** calls a waiter or asks for the bill; it shows "Staff notified" until staff mark it done.
 
 **Staff and owners** (dashboard at `/admin`)
-- **Orders**: the queue comes first. New orders appear within 5 seconds, highlighted, with an optional chime, and
-  turn amber then red the longer they wait. One button moves each order along (accept, start preparing, mark ready,
-  mark served). Waiter and bill requests appear at the top. Owners also see today's orders, revenue and best sellers.
+- **Orders**: the queue comes first. New orders appear within 5 seconds, highlighted, with an optional chime and
+  optional browser desktop notifications for owners (with in-dashboard alerts when desktop notifications are unavailable).
+  Order cards turn amber then red the longer they wait. One button moves each order along (accept, start preparing, mark ready,
+  mark served). Waiter and bill requests appear at the top. Open any order's invoice preview to print a customer bill.
+  Owners also see today's orders, revenue and best sellers.
 - **Menu**: everyone can mark dishes sold out with a switch. Owners add and edit dishes (photo upload, price, section,
   description, diet type, spicy, bestseller) and add, rename or hide sections.
 - **Tables**: see at a glance which tables are free, seated or need attention (open orders, waiter or bill requests).
@@ -74,6 +76,13 @@ pytest
 
 Tests use in-memory SQLite, so no database is needed.
 
+The notification event/permission behavior has a focused frontend test:
+
+```sh
+cd frontend
+npm run test:notifications
+```
+
 ## Security model
 
 - **Guests** scan a table's QR code (an unguessable token) and enter their name/phone. That creates a
@@ -92,6 +101,8 @@ Tests use in-memory SQLite, so no database is needed.
   **Rotate token** issues a new QR code; the old printed code stops working.
 - Service charge and tax are set by the owner in **Settings** (the `.env` values are only the first-run defaults).
   They are calculated on the server and stored with each order, so changing a rate later doesn't change past bills.
+  New orders also snapshot the applied rates and tax label for invoice display; older orders retain their stored amounts
+  and show the tax label/rate only when that historical data is available.
 - **Uploads** (owner only) must be real JPG, PNG or WebP images up to 5 MB. They are resized and re-saved as WebP,
   which strips location and camera data, and stored under a random name. SVGs and other files are refused.
 - Prices always come from the database. A retry with the same `idempotency_key` returns the

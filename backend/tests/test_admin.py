@@ -1,6 +1,7 @@
 """Only admins can see all orders and change orders, the menu and tables."""
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import jwt
 import pytest
@@ -8,12 +9,14 @@ import pytest
 from app.config import settings
 from app.limits import limiter
 from app.models import OrderStatus
+from app.restaurant import get_restaurant
 from app.routers.admin_orders import TRANSITIONS
 from conftest import ADMIN_PASSWORD, place_order, start_session
 
 ADMIN_ENDPOINTS = [
     ("get", "/api/admin/me"),
     ("get", "/api/admin/orders"),
+    ("get", "/api/admin/orders/1"),
     ("patch", "/api/admin/orders/1/status"),
     ("get", "/api/admin/menu"),
     ("post", "/api/admin/menu"),
@@ -118,6 +121,49 @@ def test_admin_sees_all_orders_with_customer_details(client, tables, menu, owner
     }
     placed = client.get("/api/admin/orders?status=PLACED&limit=1", headers=owner_headers).json()
     assert len(placed) == 1
+
+
+def test_order_detail_includes_snapshot_items_and_billing(client, db, tables, menu, staff_headers):
+    settings = get_restaurant(db)
+    settings.service_charge_percent = Decimal("10")
+    settings.tax_percent = Decimal("5")
+    db.commit()
+    session = start_session(client, tables["t1"], name="Alice")
+    order_id = place_order(
+        client,
+        tables["t1"],
+        session,
+        [{"item_id": menu["toast"].id, "quantity": 2}],
+    ).json()["id"]
+
+    menu["toast"].name = "Updated toast"
+    menu["toast"].price = 999
+    settings.tax_label = "VAT"
+    settings.tax_percent = Decimal("18")
+    db.commit()
+
+    response = client.get(f"/api/admin/orders/{order_id}", headers=staff_headers)
+    assert response.status_code == 200
+    invoice = response.json()
+    assert (invoice["customer_name"], invoice["customer_phone"], invoice["table_name"]) == (
+        "Alice",
+        "+919876543210",
+        "Table 1",
+    )
+    assert invoice["items"] == [{"name": "Toast", "quantity": 2, "unit_price": 240, "line_total": 480}]
+    assert (
+        invoice["subtotal"],
+        invoice["service_charge"],
+        invoice["tax"],
+        invoice["total"],
+        invoice["service_charge_percent"],
+        invoice["tax_percent"],
+        invoice["tax_label"],
+    ) == (480, 48, 26.4, 554.4, 10, 5, "GST")
+
+
+def test_order_detail_not_found(client, owner_headers):
+    assert client.get("/api/admin/orders/99999", headers=owner_headers).status_code == 404
 
 
 def test_status_transitions(client, tables, menu, owner_headers):

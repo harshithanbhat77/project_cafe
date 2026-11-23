@@ -155,7 +155,8 @@ def place_order(
             )
         )
 
-    bill = make_bill(subtotal, get_restaurant(db))
+    restaurant = get_restaurant(db)
+    bill = make_bill(subtotal, restaurant)
     order = Order(
         table_id=session.table_id,
         customer_session_id=session.id,
@@ -167,6 +168,9 @@ def place_order(
         service_charge=bill.service_charge,
         tax=bill.tax,
         total=bill.total,
+        service_charge_percent=restaurant.service_charge_percent,
+        tax_percent=restaurant.tax_percent,
+        tax_label_snapshot=restaurant.tax_label,
         idempotency_key=data.idempotency_key,
         items=lines,
     )

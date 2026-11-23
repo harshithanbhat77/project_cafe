@@ -15,10 +15,13 @@ export type Order = {
   service_charge: number
   tax: number
   total: number
+  service_charge_percent: number | null
+  tax_percent: number | null
+  tax_label: string | null
   created_at: string
   customer_name: string
   customer_phone: string
-  items: { name: string; quantity: number; line_total: number }[]
+  items: { name: string; quantity: number; unit_price: number; line_total: number }[]
 }
 
 export type Summary = {
@@ -49,6 +52,7 @@ export type ServiceRequest = {
   id: number
   kind: 'WAITER' | 'BILL'
   created_at: string
+  resolved_at: string | null
   table_name: string
   customer_name: string
 }

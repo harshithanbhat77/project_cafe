@@ -76,6 +76,22 @@ def test_requests_from_expired_sessions_are_hidden(client, db, tables, staff_hea
     assert client.get("/api/admin/requests", headers=staff_headers).json() == []
 
 
+def test_admin_can_poll_recent_requests_even_after_resolution(client, tables, staff_headers):
+    session = start_session(client, tables["t1"], name="Aanya")
+    request = ask(client, tables["t1"], session, "BILL").json()
+    assert client.post(f"/api/admin/requests/{request['id']}/resolve", headers=staff_headers).status_code == 204
+
+    assert client.get("/api/admin/requests", headers=staff_headers).json() == []
+    events = client.get(
+        "/api/admin/requests?created_after=2000-01-01T00:00:00Z",
+        headers=staff_headers,
+    )
+    assert events.status_code == 200
+    assert [(row["id"], row["kind"], row["resolved_at"] is not None) for row in events.json()] == [
+        (request["id"], "BILL", True)
+    ]
+
+
 def test_staff_must_sign_in(client):
     assert client.get("/api/admin/requests").status_code == 401
     assert client.post("/api/admin/requests/1/resolve").status_code == 401

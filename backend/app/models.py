@@ -147,6 +147,10 @@ class Order(Base):
     service_charge: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     tax: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     total: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    # Nullable for orders created before these billing details were snapshotted.
+    service_charge_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    tax_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    tax_label_snapshot: Mapped[str | None] = mapped_column(String(20))
     idempotency_key: Mapped[str] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
@@ -173,7 +177,7 @@ class ServiceRequest(Base):
     table_id: Mapped[int] = mapped_column(ForeignKey("cafe_tables.id"), index=True)
     customer_session_id: Mapped[int] = mapped_column(ForeignKey("customer_sessions.id"), index=True)
     kind: Mapped[ServiceRequestKind] = mapped_column(Enum(ServiceRequestKind, native_enum=False, length=20))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     resolved_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 

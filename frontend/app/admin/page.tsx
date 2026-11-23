@@ -1,5 +1,6 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import {
   BellRing,
   Check,
@@ -19,6 +20,8 @@ import type { LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { useConfirm } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
+import { NOTIFICATION_LOOKBACK_MS } from '@/lib/admin-notifications'
+import NotificationControls from './notification-controls'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { money } from '@/lib/api'
 import { clockTime, timeSince, useNow } from '@/lib/time'
@@ -73,7 +76,7 @@ const FILTERS = {
 type Filter = keyof typeof FILTERS
 
 export default function OrdersPage() {
-  const { call, isOwner, restaurant } = useAdmin()
+  const { call, isOwner, restaurant, observeNotificationEvents } = useAdmin()
   const currency = restaurant?.currency ?? 'INR'
   const now = useNow()
   const [confirm, confirmDialog] = useConfirm()
@@ -94,25 +97,31 @@ export default function OrdersPage() {
     try {
       const [list, open] = await Promise.all([
         call<Order[]>('/api/admin/orders'),
-        call<ServiceRequest[]>('/api/admin/requests'),
+        call<ServiceRequest[]>(
+          `/api/admin/requests?created_after=${encodeURIComponent(new Date(Date.now() - NOTIFICATION_LOOKBACK_MS).toISOString())}`,
+        ),
       ])
+      observeNotificationEvents(list, open)
       // On the first load everything is "already seen", so there's no chime for old orders.
       const newOrders = seenOrders.current
         ? list.filter((o) => o.status === 'PLACED' && !seenOrders.current!.has(o.id))
         : []
-      const newRequests = seenRequests.current ? open.filter((r) => !seenRequests.current!.has(r.id)) : []
+      const currentRequests = open.filter((r) => !r.resolved_at)
+      const newRequests = seenRequests.current
+        ? currentRequests.filter((r) => !seenRequests.current!.has(r.id))
+        : []
       seenOrders.current = new Set(list.map((o) => o.id))
-      seenRequests.current = new Set(open.map((r) => r.id))
+      seenRequests.current = new Set(currentRequests.map((r) => r.id))
       if (newOrders.length > 0) setHighlighted((ids) => ids.concat(newOrders.map((o) => o.id)))
       if ((newOrders.length > 0 || newRequests.length > 0) && audio.current) chime(audio.current)
       setOrders(list)
-      setRequests(open)
+      setRequests(currentRequests)
       if (isOwner) setSummary(await call<Summary>('/api/admin/summary'))
       setError('')
     } catch (e) {
       setError((e as Error).message)
     }
-  }, [call, isOwner])
+  }, [call, isOwner, observeNotificationEvents])
 
   useEffect(() => {
     load()
@@ -209,6 +218,7 @@ export default function OrdersPage() {
           </Button>
         }
       />
+      {isOwner && <NotificationControls />}
       <ErrorBanner message={error} />
 
       {requests.length > 0 && (
@@ -216,6 +226,7 @@ export default function OrdersPage() {
           {requests.map((r) => (
             <div
               key={r.id}
+              id={`guest-request-${r.id}`}
               className="flex items-center gap-3 rounded-xl border border-primary/30 bg-brand-soft p-3 pl-4 animate-in fade-in slide-in-from-top-1"
             >
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
@@ -332,6 +343,7 @@ function OrderCard({
   const late = lateness(order, now)
   return (
     <article
+      id={`order-${order.id}`}
       className={cn(
         'flex flex-col overflow-hidden rounded-2xl border border-l-4 bg-card shadow-xs transition-shadow',
         late === 'on-time' && 'border-l-border',
@@ -391,27 +403,30 @@ function OrderCard({
         </p>
       </div>
 
-      {(next || CANCELLABLE.includes(order.status)) && (
-        <footer className="flex gap-2 border-t p-3">
-          {next && (
-            <Button size="xl" className="flex-1" disabled={busy} onClick={() => onMove(next.status)}>
-              <next.icon /> {next.label}
-            </Button>
-          )}
-          {CANCELLABLE.includes(order.status) && (
-            <Button
-              size="icon-xl"
-              variant="outline"
-              disabled={busy}
-              onClick={() => onMove('CANCELLED')}
-              aria-label={`Cancel order #${order.reference}`}
-              title="Cancel order"
-            >
-              <X />
-            </Button>
-          )}
-        </footer>
-      )}
+      <footer className="flex flex-wrap gap-2 border-t p-3">
+        <Button variant="outline" size="lg" asChild>
+          <Link href={`/admin/orders/${order.id}/invoice`}>
+            <ReceiptText /> View invoice
+          </Link>
+        </Button>
+        {next && (
+          <Button size="xl" className="min-w-40 flex-1" disabled={busy} onClick={() => onMove(next.status)}>
+            <next.icon /> {next.label}
+          </Button>
+        )}
+        {CANCELLABLE.includes(order.status) && (
+          <Button
+            size="icon-xl"
+            variant="outline"
+            disabled={busy}
+            onClick={() => onMove('CANCELLED')}
+            aria-label={`Cancel order #${order.reference}`}
+            title="Cancel order"
+          >
+            <X />
+          </Button>
+        )}
+      </footer>
     </article>
   )
 }

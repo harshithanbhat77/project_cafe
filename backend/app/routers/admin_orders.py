@@ -37,6 +37,14 @@ def list_orders(
     return [AdminOrderOut.from_order(order) for order in db.scalars(query).all()]
 
 
+@router.get("/orders/{order_id}", response_model=AdminOrderOut)
+def get_order(order_id: int, db: Session = Depends(get_db)):
+    order = db.scalar(with_order_details(select(Order).where(Order.id == order_id)))
+    if order is None:
+        raise HTTPException(404, "Order not found")
+    return AdminOrderOut.from_order(order)
+
+
 @router.patch("/orders/{order_id}/status", response_model=AdminOrderOut)
 def update_order_status(order_id: int, data: StatusIn, db: Session = Depends(get_db)):
     # Lock the row so two staff clicking at the same time can't both move it.
